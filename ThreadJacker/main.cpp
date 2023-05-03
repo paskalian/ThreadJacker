@@ -426,6 +426,19 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
 
 int main(int argc, const char* argv[])
 {
+    printf(R"(
+  ________  ______  _________    ____         _____   ________ __ __________
+ /_  __/ / / / __ \/ ____/   |  / __ \       / /   | / ____/ //_// ____/ __ \
+  / / / /_/ / /_/ / __/ / /| | / / / /  __  / / /| |/ /   / ,<  / __/ / /_/ /
+ / / / __  / _, _/ /___/ ___ |/ /_/ /  / /_/ / ___ / /___/ /| |/ /___/ _, _/
+/_/ /_/ /_/_/ |_/_____/_/  |_/_____/   \____/_/  |_\____/_/ |_/_____/_/ |_|
+
+                    made by github.com/paskalian                          
+)");
+    printf("\n");
+
+    getchar();
+
     // Checking for arguments.
     if (argc != 2)
     {

@@ -24,4 +24,7 @@
       <Filter>Kaynak Dosyaları</Filter>
     </MASM>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\Images\ThreadJacker.svg" />
+  </ItemGroup>
 </Project>
