@@ -22,7 +22,7 @@ HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, { 0, "TEX
    
    - The last parameter is a std::vector\<std::any\> basically meaning an array of any kind of type which is where you will put your arguments to be passed into the function. **For now it only supports 4 parameters and doesn't support floating point values, but if you are planning to use it on WinAPI that won't be a huge problem.**
 
-2. Run the compiled process with a PID parameter.
+2. After setting up the HandleHijack(s) compile the project and run the compiled process with a PID parameter.
 ```
 CompiledProcess.exe 1234
 ```
