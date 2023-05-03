@@ -20,7 +20,7 @@ HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, { 0, "TEX
      - SELF, meaning that the third parameter is a 2 UINT_PTR array which the first UINT_PTR is the function inside the **current process** and the second UINT_PTR is the size of this function. Can be used if you made your own function to be implemented in the target process and then be executed, but don't want to mess with converting the entire function into byte format. **The usage of this mode can result in problems on Debug mode builds.**
      - BYTE, meaning that the third parameter is a std::vector\<BYTE\>* which contains your function in byte format to be implemented inside the target process and then be executed.
    
-   - The last parameter is a std::vector\<std::any\> basically meaning an array of any kind of type which is where you will put your arguments to be passed into the function. **For now it only supports 4 parameters and doesn't support floating point values, but if you are planning to use it on WinAPI that won't be a huge problem.**
+   - The last parameter is a std::vector\<std::any\> basically meaning an array of any kind of type which is where you will put your arguments to be passed into the function. **For now it doesn't support floating point values, but if you are planning to use it on WinAPI functions, that won't be a huge problem.**
 
 2. After setting up the HandleHijack(s) compile the project and run the compiled process with a PID parameter.
 ```
