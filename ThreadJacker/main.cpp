@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 #include <iostream>
+#include <cassert>
 #include <vector>
 #include <string>
 #include <any>
@@ -28,24 +29,6 @@ struct HIJACKDATA
     UINT_PTR FunctionAddress = 0;
     UINT_PTR VariablesAddress = 0;
 };
-
-/*
-struct HIJACKHISTORY
-{
-    HIJACKTYPE HijackType;
-    UINT_PTR FunctionAddress;
-    SIZE_T FunctionSize;
-
-    bool operator==(HIJACKHISTORY& Other)
-    {
-        return (HijackType == Other.HijackType) &&
-            (FunctionAddress == Other.FunctionAddress) &&
-            (FunctionSize == Other.FunctionSize);
-    }
-
-    HIJACKDATA Data;
-};
-*/
 
 HANDLE GetMainThreadHandle(DWORD TargetProcessPid)
 {
@@ -84,7 +67,7 @@ SIZE_T GetTypeSize(const std::any& Type, SIZETYPE SizeType)
     // I can't switch.
     if (TypeInfo == typeid(const char*) || TypeInfo == typeid(char*))
         return SizeType == SIZETYPE::INCLUDEEXTRA ? (sizeof(char*) + strlen(*(const char**)&Type) + 1) : sizeof(char*);
-    else if (TypeInfo == typeid(wchar_t*))
+    else if (TypeInfo == typeid(const wchar_t*))
         return SizeType == SIZETYPE::INCLUDEEXTRA ? (sizeof(wchar_t*) + wcslen(*(const wchar_t**)&Type) * sizeof(WCHAR) + 1) : sizeof(wchar_t*);
     else
     {
@@ -103,8 +86,8 @@ SIZE_T GetTypeSize(const std::any& Type, SIZETYPE SizeType)
             //  return sizeof(float);
             else
             {
-                printf("[%s] Type couldn't be handled!\n", TypeName.c_str());
-                return 0;
+                printf("[-] Type (%s) couldn't be handled!\n", TypeName.c_str());
+                assert(false);
             }
         }
 
@@ -123,15 +106,32 @@ SIZE_T GetArgumentsSize(const std::vector<std::any>& Arguments, SIZETYPE SizeTyp
 
 void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 {
-    static const BYTE ShellcodeBytes[] =
-        "\x48\x83\xEC\x08\xC7\x04\x24\xCC\xCC\xCC\xCC\xC7\x44\x24\x04\xCC\xCC\xCC\xCC\x9C\x50\x51\x52\x53\x55\x56\x57"
-        "\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48"
-        "\x8B\x08\x48\x8B\x50\x08\x4C\x8B\x40\x10\x4C\x8B\x48\x18\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x83\xC4"
-        "\x08\xFF\xD0\x48\x83\xEC\x08\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5F\x5E\x5D\x5B"
-        "\x5A\x59\x58\x9D\xC3";
+    printf("[*] Hijacking the thread with current info:\n  [*] Function Address: %p\n  [*] Variables Address: %p\n", (PVOID)Data.FunctionAddress, (PVOID)Data.VariablesAddress);
 
-    static const PVOID ShellcodeMemory = VirtualAllocEx(TargetProcess, NULL, sizeof(ShellcodeBytes), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    static const BOOL WPMStatus = WriteProcessMemory(TargetProcess, ShellcodeMemory, ShellcodeBytes, sizeof(ShellcodeBytes), NULL);
+    static const BYTE ShellcodeBytes[] =
+        "\x48\x83\xEC\x08\xC7\x04\x24\xCC\xCC\xCC\xCC\xC7\x44\x24\x04\xCC\xCC\xCC\xCC\x9C\x50\x51\x52\x53\x55\x56"
+        "\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC"
+        "\xCC\x50\x48\x8B\x30\x48\x8B\x48\x08\x48\x8B\x50\x10\x4C\x8B\x40\x18\x4C\x8B\x48\x20\x48\x83\xFE\x04\x76"
+        "\x10\x48\x83\xEE\x04\xFF\x74\xF0\x20\x48\xFF\xCE\x48\x85\xF6\x75\xF4\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC"
+        "\xCC\x48\x83\xEC\x28\xFF\xD0\x48\x83\xC4\x28\x58\x48\xC7\x00\x00\x00\x00\x00\x41\x5F\x41\x5E\x41\x5D\x41"
+        "\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5F\x5E\x5D\x5B\x5A\x59\x58\x9D\xC3";
+
+    const PVOID ShellcodeMemory = VirtualAllocEx(TargetProcess, NULL, sizeof(ShellcodeBytes), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    if (!ShellcodeMemory)
+    {
+        printf("[-] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
+        return;
+    }
+    printf("[*] Allocated memory for shellcode [%p]\n", ShellcodeMemory);
+
+    if (!WriteProcessMemory(TargetProcess, ShellcodeMemory, ShellcodeBytes, sizeof(ShellcodeBytes), NULL))
+    {
+        printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+
+        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
+        return;
+    }
+    printf("[*] Shellcode bytes are written.\n");
 
     // Getting a snapshot of the threads running on the system.
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -141,16 +141,32 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
     // Iterating through the threads until we find a thread from the target process.
     Thread32First(hSnapshot, &ThreadEntry);
+
+    // Putting an iteration limit to prevent deadlock.
+    SIZE_T IterateTimes = 0;
     while (ThreadEntry.th32OwnerProcessID != GetProcessId(TargetProcess))
     {
         if (!Thread32Next(hSnapshot, &ThreadEntry))
         {
-            printf("Thread32Next failed, err: 0x%X\n", GetLastError());
+            printf("[-] Thread32Next failed, err: 0x%X\n", GetLastError());
 
+            VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
+            CloseHandle(hSnapshot);
+            return;
+        }
+
+        IterateTimes++;
+
+        if (IterateTimes >= 10000)
+        {
+            printf("[-] Thread couldn't be found.\n");
+
+            VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
             CloseHandle(hSnapshot);
             return;
         }
     }
+    printf("[*] Thread found, TID: %i\n", ThreadEntry.th32ThreadID);
 
     CloseHandle(hSnapshot);
 
@@ -158,9 +174,12 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     HANDLE hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, ThreadEntry.th32ThreadID);
     if (!hThread)
     {
-        printf("OpenThread failed, err: 0x%X\n", GetLastError());
+        printf("[-] OpenThread failed, err: 0x%X\n", GetLastError());
+
+        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
         return;
     }
+    printf("[*] Retrieved handle for target thread, 0x%X\n", HandleToULong(hThread));
 
     // Setting up a CONTEXT structure to be used while getting the thread context, CONTEXT_CONTROL meaning
     // we will only work on RIP, etc.
@@ -170,10 +189,13 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     // Suspending the thread because if we change the thread context while it's running it can result in undefined behaviour.
     if (SuspendThread(hThread) == HandleToULong(INVALID_HANDLE_VALUE))
     {
-        printf("SuspendThread failed, err: 0x%X\n", GetLastError());
+        printf("[-] SuspendThread failed, err: 0x%X\n", GetLastError());
+
+        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
         CloseHandle(hThread);
         return;
     }
+    printf("[*] Thread suspended.\n");
 
     // Getting the thread context.
     if (GetThreadContext(hThread, &ThreadContext))
@@ -201,9 +223,11 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
         // Writing the ShellcodeParams into the
         // mov rax, 0CCCCCCCCCCCCCCCCh
-        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the function address.
+        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the function address.
         Buffer64 = Data.FunctionAddress;
-        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 70), &Buffer64, sizeof(DWORD64), NULL);
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 97), &Buffer64, sizeof(DWORD64), NULL);
+
+        printf("[*] Dummy bytes are overwritten.\n");
 
         // Updating the RIP to ShellcodeAddress
 #ifdef _WIN64
@@ -215,63 +239,78 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
         // Setting the updated thread context.
         if (!SetThreadContext(hThread, &ThreadContext))
-            printf("SetThreadContext failed, err: 0x%X\n", GetLastError());
+            printf("[-] SetThreadContext failed, err: 0x%X\n", GetLastError());
+        else
+            printf("[*] Thread context updated [RIP: %p -> %p].\n", (PVOID)JmpBackAddr, (PVOID)ShellcodeMemory);
     }
     else
-        printf("GetThreadContext failed, err: 0x%X\n", GetLastError());
+        printf("[-] GetThreadContext failed, err: 0x%X\n", GetLastError());
 
     // Resuming the thread with the updated RIP making the shellcode get executed IF the thread was already in a execute state when it was suspended,
     // if not, the thread will stay in it's suspend state.
     if (ResumeThread(hThread) == HandleToULong(INVALID_HANDLE_VALUE))
     {
-        printf("ResumeThread failed, err: 0x%X\n", GetLastError());
+        printf("[-] ResumeThread failed, err: 0x%X\n", GetLastError());
+
+        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
+        CloseHandle(hThread);
         return;
     }
+    printf("[*] Thread resumed.\n");
+
+    CloseHandle(hThread);
+    printf("[*] Target thread handle closed.\n");
+
+    // Checking if our thread has finished.
+    UINT_PTR ThreadFinish = 0;
+    while (ReadProcessMemory(TargetProcess, (PVOID)Data.VariablesAddress, &ThreadFinish, sizeof(UINT_PTR), NULL), ThreadFinish)
+        ;
+
+    // Giving the shellcode a little more time to finish.
+    Sleep(50);
+
+    printf("[*] Hijacked thread finished.\n");
+
+    if (ShellcodeMemory)
+        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
+    printf("[*] Shellcode memory released.\n");
 
     return;
 }
 
-void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR FunctionAddress, SIZE_T FunctionSize, std::vector<std::any> Arguments = {})
+void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR FunctionAddress, std::vector<std::any> Arguments = {})
 {
-    /*
-    static std::vector<HIJACKHISTORY> History;
+    // If the number of arguments is less than 4, we complete it to four.
+    while (Arguments.size() < 4)
+        Arguments.push_back(0);
 
-    bool AllocateFunction = true;
-    HIJACKHISTORY CurrentHistory = { HijackType, FunctionAddress, FunctionSize };
-    for (auto& IdxHistory : History)
-    {
-        if (CurrentHistory == IdxHistory)
-        {
-            CurrentHistory = IdxHistory;
-
-            AllocateFunction = false;
-            break;
-        }
-    }
-    */
     HIJACKDATA Data = {};
 
     PVOID VariablesMemory = nullptr;
 
-    const SIZE_T ArgumentsSize = GetArgumentsSize(Arguments, SIZETYPE::INCLUDEEXTRA);
-    const SIZE_T OffsetToExtra = GetArgumentsSize(Arguments, SIZETYPE::DEFAULT);
+    const SIZE_T ArgumentsSize = GetArgumentsSize(Arguments, SIZETYPE::INCLUDEEXTRA) + sizeof(UINT_PTR);
+    const SIZE_T OffsetToExtra = GetArgumentsSize(Arguments, SIZETYPE::DEFAULT) + sizeof(UINT_PTR);
 
+    // Allocating space for the argument count + arguments 
     VariablesMemory = VirtualAllocEx(TargetProcess, nullptr, ArgumentsSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!VariablesMemory)
     {
-        printf("[!] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
+        printf("[-] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
         return;
     }
+    printf("[*] Allocated memory for variables [%p]\n", VariablesMemory);
 
-    const std::vector<BYTE> ZeroBytes(ArgumentsSize, 0);
-    if (!WriteProcessMemory(TargetProcess, VariablesMemory, &ZeroBytes.at(0), ZeroBytes.size(), NULL))
+    // Writing the argument count to the first UINT_PTR
+    const SIZE_T ArgumentCount = Arguments.size();
+    if (!WriteProcessMemory(TargetProcess, (BYTE*)VariablesMemory, &ArgumentCount, sizeof(SIZE_T), NULL))
     {
-        printf("[!] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+        printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
         VirtualFreeEx(TargetProcess, VariablesMemory, 0, MEM_RELEASE);
         return;
     }
 
-    SIZE_T Offset = 0;
+    // Writing the other arguments, if it's a string we write them to the extra zone.
+    SIZE_T Offset = sizeof(UINT_PTR);
     SIZE_T OffsetFromExtra = 0;
     for (auto& ArgIdx : Arguments)
     {
@@ -285,7 +324,7 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
             if (!WriteProcessMemory(TargetProcess, (BYTE*)VariablesMemory + Offset, &StringAddress, sizeof(PVOID), NULL) ||
                (!WriteProcessMemory(TargetProcess, StringAddress, *(const char**)&ArgIdx, StringSize, NULL)))
             {
-                printf("[!] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+                printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
                 VirtualFreeEx(TargetProcess, VariablesMemory, 0, MEM_RELEASE);
                 return;
             }
@@ -295,7 +334,7 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
             const SIZE_T ActualSize = GetTypeSize(ArgIdx, SIZETYPE::ACTUALSIZE);
             if (!WriteProcessMemory(TargetProcess, (BYTE*)VariablesMemory + Offset, &ArgIdx, ActualSize, NULL))
             {
-                printf("[!] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+                printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
                 VirtualFreeEx(TargetProcess, VariablesMemory, 0, MEM_RELEASE);
                 return;
             }
@@ -304,87 +343,85 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
         Offset += IsString ? sizeof(PVOID) : ArgSize;
         OffsetFromExtra += StringSize;
     }
+    printf("[*] Arguments are written.\n");
 
-    //CurrentHistory.Data.VariablesAddress = (UINT_PTR)VariablesMemory;
     Data.VariablesAddress = (UINT_PTR)VariablesMemory;
 
     PVOID AllocatedMemory = nullptr;
-    /*
-    if (AllocateFunction)
+    switch (HijackType)
     {
-    */
-        switch (HijackType)
-        {
         case HIJACKTYPE::DIRECT:
         {
-            //CurrentHistory.Data.FunctionAddress = FunctionAddress;
+            // If it's direct we don't need to allocate then write the function since it's already in the target process.
             Data.FunctionAddress = FunctionAddress;
 
-            //HijackThread(TargetProcess, CurrentHistory.Data);
             HijackThread(TargetProcess, Data);
 
             break;
         }
         case HIJACKTYPE::BYTE:
         {
+            // Allocating memory for the function in the target process and writing the function bytes there.
             std::vector<BYTE>* FunctionBytes = (std::vector<BYTE>*)FunctionAddress;
             AllocatedMemory = VirtualAllocEx(TargetProcess, nullptr, FunctionBytes->size(), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (!AllocatedMemory)
             {
-                printf("[!] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
+                printf("[-] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
                 return;
             }
+            printf("[*] Allocated memory for function [%p]\n", AllocatedMemory);
 
             if (!WriteProcessMemory(TargetProcess, AllocatedMemory, FunctionBytes, FunctionBytes->size(), NULL))
             {
-                printf("[!] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+                printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
                 VirtualFreeEx(TargetProcess, AllocatedMemory, 0, MEM_RELEASE);
                 return;
             }
+            printf("[*] Function bytes are written [%p]\n", AllocatedMemory);
         }
         case HIJACKTYPE::SELF:
         {
+            // Since HIJACKTYPE::BYTE doesn't have a break it will end up here after it's own functionality, this check is to seperate the two because they end up doing the exact
+            // same thing ultimately.
             if (!AllocatedMemory)
             {
+                // Allocating memory for the function in the target process and writing the function bytes there.
                 UINT_PTR* FunctionAndSize = (UINT_PTR*)FunctionAddress;
 
                 AllocatedMemory = VirtualAllocEx(TargetProcess, nullptr, FunctionAndSize[1], MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
                 if (!AllocatedMemory)
                 {
-                    printf("[!] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
+                    printf("[-] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
                     return;
                 }
+                printf("[*] Allocated memory for function [%p]\n", AllocatedMemory);
 
                 if (!WriteProcessMemory(TargetProcess, AllocatedMemory, (PVOID)FunctionAndSize[0], FunctionAndSize[1], NULL))
                 {
-                    printf("[!] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+                    printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
                     VirtualFreeEx(TargetProcess, AllocatedMemory, 0, MEM_RELEASE);
                     return;
                 }
+                printf("[*] Function bytes are written [%p]\n", AllocatedMemory);
             }
 
-            //CurrentHistory.Data.FunctionAddress = (UINT_PTR)AllocatedMemory;
             Data.FunctionAddress = (UINT_PTR)AllocatedMemory;
-            //HijackThread(TargetProcess, CurrentHistory.Data);
             HijackThread(TargetProcess, Data);
 
             break;
         }
-        }
-    /*
     }
-    else
-        HijackThread(TargetProcess, CurrentHistory.Data);
-    */
 
-    printf("Press any key to free memory.\n");
-    getchar();
-
-    if (Data.FunctionAddress)
-        VirtualFreeEx(TargetProcess, (LPVOID)Data.FunctionAddress, 0, MEM_RELEASE);
+    if (HijackType != HIJACKTYPE::DIRECT)
+    {
+        if (Data.FunctionAddress)
+            VirtualFreeEx(TargetProcess, (LPVOID)Data.FunctionAddress, 0, MEM_RELEASE);
+        printf("[*] Function memory released.\n");
+    }
 
     if (Data.VariablesAddress)
         VirtualFreeEx(TargetProcess, (LPVOID)Data.VariablesAddress, 0, MEM_RELEASE);
+    printf("[*] Variables memory released.\n");
 }
 
 int main(int argc, const char* argv[])
@@ -393,7 +430,7 @@ int main(int argc, const char* argv[])
     if (argc != 2)
     {
         std::string Filename = argv[0];
-        printf("Invalid arguments\nUsage: %s PID\n", Filename.substr(Filename.find_last_of("/\\") + 1).c_str());
+        printf("[-] Invalid arguments\nUsage: %s PID\n", Filename.substr(Filename.find_last_of("/\\") + 1).c_str());
         return 0;
     }
 
@@ -401,7 +438,7 @@ int main(int argc, const char* argv[])
     DWORD Pid = atoi(argv[1]);
     if (!Pid)
     {
-        printf("Invalid PID\n");
+        printf("[-] Invalid PID\n");
         return 0;
     }
 
@@ -409,12 +446,15 @@ int main(int argc, const char* argv[])
     HANDLE TargetProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, Pid);
     if (!TargetProcess)
     {
-        printf("[!] OpenProcess failed. Err code: 0x%X\n", GetLastError());
+        printf("[-] OpenProcess failed. Err code: 0x%X\n", GetLastError());
         return 0;
     }
     printf("[*] Retrieved handle for target process, 0x%X\n", HandleToULong(TargetProcess));
 
-    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, 0, { 0, "TEXT", "CAPTION", 0});
+    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, { 0, "TEXT", "CAPTION", 0});
+
+    CloseHandle(TargetProcess);
+    printf("[*] Target process handle closed.\n");
 
     return 0;
 }
