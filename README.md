@@ -1,5 +1,6 @@
-# ThreadJacker
-By using this process you can make any function run with a hijacked thread.
+<p align="center">
+<img src="https://github.com/paskalian/ThreadJacker/blob/master/Images/ThreadJacker.svg" alt="Menu"/>
+</p>
 
 ## Information
 **Made for educational purposes only.**<br>
