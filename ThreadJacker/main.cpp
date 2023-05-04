@@ -111,12 +111,13 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     printf("[*] Hijacking the thread with current info:\n  [*] Function Address: %p\n  [*] Variables Address: %p\n", (PVOID)Data.FunctionAddress, (PVOID)Data.VariablesAddress);
 
     static const BYTE ShellcodeBytes[] =
-        "\x48\x83\xEC\x08\xC7\x04\x24\xCC\xCC\xCC\xCC\xC7\x44\x24\x04\xCC\xCC\xCC\xCC\x9C\x50\x51\x52\x53\x55\x56"
-        "\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC"
-        "\xCC\x50\x48\x8B\x30\x48\x8B\x48\x08\x48\x8B\x50\x10\x4C\x8B\x40\x18\x4C\x8B\x48\x20\x48\x83\xFE\x04\x76"
-        "\x10\x48\x83\xEE\x04\xFF\x74\xF0\x20\x48\xFF\xCE\x48\x85\xF6\x75\xF4\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC"
-        "\xCC\x48\x83\xEC\x28\xFF\xD0\x48\x83\xC4\x28\x58\x48\xC7\x00\x00\x00\x00\x00\x41\x5F\x41\x5E\x41\x5D\x41"
-        "\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5F\x5E\x5D\x5B\x5A\x59\x58\x9D\xC3";
+        "\x48\x83\xEC\x08\xC7\x04\x24\xCC\xCC\xCC\xCC\xC7\x44\x24\x04\xCC\xCC\xCC\xCC\x9C\x50\x51\x52\x53\x55\x56\x57\x41\x50\x41\x51\x41\x52"
+        "\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x8B\x30\x48\x8B\x48\x08\x48\x8B\x50\x10\x4C\x8B"
+        "\x40\x18\x4C\x8B\x48\x20\x48\x33\xDB\x48\x89\x18\x48\x83\xFE\x04\x76\x20\x48\x83\xEE\x04\x48\x89\x30\x48\xF7\xC6\x01\x00\x00\x00\x74"
+        "\x04\x48\x83\xEC\x08\xFF\x74\xF0\x20\x48\xFF\xCE\x48\x85\xF6\x75\xF4\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x83\xEC\x20\xFF\xD0"
+        "\x48\x83\xC4\x20\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x8B\x30\x48\x8B\xDE\x48\x6B\xF6\x08\x48\x03\xE6\x48\xF7\xC3\x01\x00\x00"
+        "\x00\x74\x04\x48\x83\xC4\x08\x48\xC7\x00\xFF\xFF\xFF\xFF\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5F\x5E\x5D"
+        "\x5B\x5A\x59\x58\x9D\xC3";
 
     const PVOID ShellcodeMemory = VirtualAllocEx(TargetProcess, NULL, sizeof(ShellcodeBytes), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     if (!ShellcodeMemory)
@@ -227,7 +228,13 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
         // mov rax, 0CCCCCCCCCCCCCCCCh
         // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the function address.
         Buffer64 = Data.FunctionAddress;
-        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 97), &Buffer64, sizeof(DWORD64), NULL);
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 118), &Buffer64, sizeof(DWORD64), NULL);
+
+        // Writing the ShellcodeParams into the
+        // mov rax, 0CCCCCCCCCCCCCCCCh
+        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the parameters.
+        Buffer64 = Data.VariablesAddress;
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 138), &Buffer64, sizeof(DWORD64), NULL);
 
         printf("[*] Dummy bytes are overwritten.\n");
 
@@ -265,7 +272,7 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
     // Checking if our thread has finished.
     UINT_PTR ThreadFinish = 0;
-    while (ReadProcessMemory(TargetProcess, (PVOID)Data.VariablesAddress, &ThreadFinish, sizeof(UINT_PTR), NULL), ThreadFinish)
+    while (ReadProcessMemory(TargetProcess, (PVOID)Data.VariablesAddress, &ThreadFinish, sizeof(UINT_PTR), NULL), ThreadFinish != -1)
         ;
 
     // Giving the shellcode a little more time to finish.
@@ -467,7 +474,7 @@ int main(int argc, const char* argv[])
     }
     printf("[*] Retrieved handle for target process, 0x%X\n", HandleToULong(TargetProcess));
 
-    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, { 0, "TEXT", "CAPTION", 0});
+    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxExW, { 0, L"TEXT", L"CAPTION", 0, 0 });
     HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxW, { 0, L"WTEXT", L"WCAPTION", 0 });
 
     CloseHandle(TargetProcess);
