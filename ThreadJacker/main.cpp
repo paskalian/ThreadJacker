@@ -308,7 +308,7 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
         printf("[-] VirtualAllocEx failed, err: 0x%X\n", GetLastError());
         return;
     }
-    printf("[*] Allocated memory for variables [%p]\n", VariablesMemory);
+    printf("[*] Allocated memory for arguments [%p]\n", VariablesMemory);
 
     // Writing the argument count to the first UINT_PTR
     const SIZE_T ArgumentCount = Arguments.size();
