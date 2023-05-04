@@ -437,8 +437,6 @@ int main(int argc, const char* argv[])
 )");
     printf("\n");
 
-    getchar();
-
     // Checking for arguments.
     if (argc != 2)
     {
