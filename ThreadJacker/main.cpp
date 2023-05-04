@@ -68,7 +68,7 @@ SIZE_T GetTypeSize(const std::any& Type, SIZETYPE SizeType)
     if (TypeInfo == typeid(const char*) || TypeInfo == typeid(char*))
         return SizeType == SIZETYPE::INCLUDEEXTRA ? (sizeof(char*) + strlen(*(const char**)&Type) + 1) : sizeof(char*);
     else if (TypeInfo == typeid(const wchar_t*))
-        return SizeType == SIZETYPE::INCLUDEEXTRA ? (sizeof(wchar_t*) + wcslen(*(const wchar_t**)&Type) * sizeof(WCHAR) + 1) : sizeof(wchar_t*);
+        return SizeType == SIZETYPE::INCLUDEEXTRA ? (sizeof(wchar_t*) + wcslen(*(const wchar_t**)&Type) * sizeof(WCHAR) + 2) : sizeof(wchar_t*);
     else
     {
         if (SizeType == SIZETYPE::ACTUALSIZE)
@@ -271,8 +271,7 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
     printf("[*] Hijacked thread finished.\n");
 
-    if (ShellcodeMemory)
-        VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
+    VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
     printf("[*] Shellcode memory released.\n");
 
     return;
@@ -280,6 +279,8 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 
 void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR FunctionAddress, std::vector<std::any> Arguments = {})
 {
+    printf("==============================================\n");
+
     // If the number of arguments is less than 4, we complete it to four.
     while (Arguments.size() < 4)
         Arguments.push_back(0);
@@ -340,7 +341,7 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
             }
         }
 
-        Offset += IsString ? sizeof(PVOID) : ArgSize;
+        Offset += sizeof(PVOID);
         OffsetFromExtra += StringSize;
     }
     printf("[*] Arguments are written.\n");
@@ -422,6 +423,8 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
     if (Data.VariablesAddress)
         VirtualFreeEx(TargetProcess, (LPVOID)Data.VariablesAddress, 0, MEM_RELEASE);
     printf("[*] Variables memory released.\n");
+
+    printf("==============================================\n");
 }
 
 int main(int argc, const char* argv[])
@@ -463,6 +466,7 @@ int main(int argc, const char* argv[])
     printf("[*] Retrieved handle for target process, 0x%X\n", HandleToULong(TargetProcess));
 
     HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxA, { 0, "TEXT", "CAPTION", 0});
+    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxW, { 0, L"WTEXT", L"WCAPTION", 0 });
 
     CloseHandle(TargetProcess);
     printf("[*] Target process handle closed.\n");
