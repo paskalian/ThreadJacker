@@ -44,7 +44,7 @@ EXTRA_PUSHES:
     push qword ptr[rax + 20h + 08h * rsi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
     dec rsi                                             ; DECREMENTING THE EXTRA STACK VARIABLES AMOUNT SINCE ONE OF THEM IS HANDLED
     test rsi, rsi                                       ; CHECKING IF THERE ARE ANY MORE EXTRA STACK VARIABLES LEFT
-    jnz EXTRA_PUSHES                                    ; IF THERE ARE ANY MORE LEFT WE JUMP BACK TO EXTRA_PUSHES, IF NOT WE GO ON BY NO_EXTRA
+    jnz EXTRA_PUSHES                                    ; IF THERE ARE ANY MORE LEFT WE JUMP BACK TO EXTRA_PUSHES, IF NOT WE GO ON BY FCALL
 FCALL:                                                  ; PUSHING EXTRA ARGUMENT COUNT TO THE STACK
     mov rax, 0CCCCCCCCCCCCCCCCh                         ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE ACTUAL FUNCTION ADDRESS AT RUNTIME
     sub rsp, 20h                                        ; OPENING UP STACK SPACE FOR VARIABLES
