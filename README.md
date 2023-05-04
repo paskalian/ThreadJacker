@@ -8,7 +8,7 @@
 **Don't forget that the hijacked thread can be any thread of the target process (usually main) and doesn't have the must to be running when it was hijacked. For summary even though you hijacked the thread, if it was in a sleep state it won't execute the shellcode until it runs.**
 
 ## Compatibility
-64-bit only **for now**.
+Compatible with both x64 and x86 architectures, you **must** use the **specific** version for a process that is x64 or x86 respectively.
 
 ## Usage
 ```cpp
