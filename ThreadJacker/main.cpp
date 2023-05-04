@@ -77,6 +77,8 @@ SIZE_T GetTypeSize(const std::any& Type, SIZETYPE SizeType)
                 return sizeof(PVOID);
             else if (TypeInfo == typeid(int))
                 return sizeof(int);
+            else if (TypeInfo == typeid(long))
+                return sizeof(long);
             else if (TypeInfo == typeid(short))
                 return sizeof(short);
             else if (TypeInfo == typeid(bool))
