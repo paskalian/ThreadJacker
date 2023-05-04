@@ -6,7 +6,11 @@
 #include <string>
 #include <any>
 
-extern "C" VOID Execute();
+#ifdef _WIN64
+extern "C" VOID Execute64();
+#else
+extern "C" VOID Execute32();
+#endif
 
 #define HIDWORD(x) (x >> 32)
 #define LODWORD(x) (x & 0xFFFFFFFF)
@@ -110,6 +114,7 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
 {
     printf("[*] Hijacking the thread with current info:\n  [*] Function Address: %p\n  [*] Variables Address: %p\n", (PVOID)Data.FunctionAddress, (PVOID)Data.VariablesAddress);
 
+#ifdef _WIN64
     static const BYTE ShellcodeBytes[] =
         "\x48\x83\xEC\x08\xC7\x04\x24\xCC\xCC\xCC\xCC\xC7\x44\x24\x04\xCC\xCC\xCC\xCC\x9C\x50\x51\x52\x53\x55\x56\x57\x41\x50\x41\x51\x41\x52"
         "\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x8B\x30\x48\x8B\x48\x08\x48\x8B\x50\x10\x4C\x8B"
@@ -118,6 +123,13 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
         "\x48\x83\xC4\x20\x48\xB8\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x48\x8B\x30\x48\x8B\xDE\x48\x6B\xF6\x08\x48\x03\xE6\x48\xF7\xC3\x01\x00\x00"
         "\x00\x74\x04\x48\x83\xC4\x08\x48\xC7\x00\xFF\xFF\xFF\xFF\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5F\x5E\x5D"
         "\x5B\x5A\x59\x58\x9D\xC3";
+#else
+    static const BYTE ShellcodeBytes[] =
+        "\x83\xEC\x04\xC7\x04\x24\xCC\xCC\xCC\xCC\x9C\x60\xB8\xCC\xCC\xCC\xCC\x8B\x30\x8B\x58\x04\x83\xFB\x02\x74\x0B\xFF\x74\xB0\x04\x4E\x85"
+        "\xF6\x75\xF7\xEB\x1F\x8B\x48\x08\x8B\x50\x0C\xC7\x00\x00\x00\x00\x00\x83\xFE\x02\x76\x0E\x83\xEE\x02\x89\x30\xFF\x74\xB0\x0C\x4E\x85"
+        "\xF6\x75\xF7\xB8\xCC\xCC\xCC\xCC\xFF\xD0\xB8\xCC\xCC\xCC\xCC\x8B\x30\x8B\x58\x04\x83\xFB\x01\x74\x05\x6B\xF6\x04\x03\xE6\xC7\x00\xFF"
+        "\xFF\xFF\xFF\x61\x9D\xC3";
+#endif
 
     const PVOID ShellcodeMemory = VirtualAllocEx(TargetProcess, NULL, sizeof(ShellcodeBytes), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     if (!ShellcodeMemory)
@@ -204,8 +216,13 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     if (GetThreadContext(hThread, &ThreadContext))
     {
         // Saving the RIP since we are gonna return the thread after the shellcode is executed.
+#ifdef _WIN64
         UINT_PTR JmpBackAddr = ThreadContext.Rip;
+#else
+        UINT_PTR JmpBackAddr = ThreadContext.Eip;
+#endif
 
+#ifdef _WIN64
         DWORD LoJmpBk = LODWORD(JmpBackAddr);
         DWORD HiJmpBk = HIDWORD(JmpBackAddr);
 
@@ -235,15 +252,42 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
         // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the parameters.
         Buffer64 = Data.VariablesAddress;
         WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 138), &Buffer64, sizeof(DWORD64), NULL);
+#else
+        // We can directly write JmpBackAddr since it will be a DWORD.
+
+        // Writing the JmpBackAddr into the
+        // mov dword ptr [esp], 0CCCCCCCCh
+        // corresponding bytes ( CC ) and then when the shellcode is executed, it will get itself some stack space and write the
+        // return address in there, when ret is called after all it pops the stack and returns to what was on top of
+        // the stack which is that address.
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 6), &JmpBackAddr, sizeof(DWORD), NULL);
+
+        // Writing the ShellcodeParams into the
+        // mov eax, 0CCCCCCCCh
+        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the parameters.
+        DWORD Buffer = Data.VariablesAddress;
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 13), &Buffer, sizeof(DWORD), NULL);
+
+        // Writing the ShellcodeParams into the
+        // mov eax, 0CCCCCCCCh
+        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the parameters.
+        Buffer = Data.FunctionAddress;
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 70), &Buffer, sizeof(DWORD), NULL);
+
+        // Writing the ShellcodeParams into the
+        // mov eax, 0CCCCCCCCh
+        // corresponding bytes ( CC ) which gets moved into rax and the shellcode uses rax as the base for the parameters.
+        Buffer = Data.VariablesAddress;
+        WriteProcessMemory(TargetProcess, (LPVOID)((BYTE*)ShellcodeMemory + 77), &Buffer, sizeof(DWORD), NULL);
+#endif
 
         printf("[*] Dummy bytes are overwritten.\n");
 
-        // Updating the RIP to ShellcodeAddress
+        // Updating the RIP to ShellcodeMemory
 #ifdef _WIN64
         ThreadContext.Rip = (DWORD64)ShellcodeMemory;
 #else
-        ThreadContext.Eip = ShellcodeAddress;
-        ThreadContext.Ecx = ShellcodeAddress;
+        ThreadContext.Eip = (DWORD32)ShellcodeMemory;
 #endif
 
         // Setting the updated thread context.
@@ -286,20 +330,36 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     return;
 }
 
-void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR FunctionAddress, std::vector<std::any> Arguments = {})
+enum class CALLINGCONVENTION : DWORD
+{
+    CC_CDECL,
+    CC_STDCALL,
+    CC_FASTCALL
+};
+
+void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR FunctionAddress, std::vector<std::any> Arguments = {}, CALLINGCONVENTION CallConvention = CALLINGCONVENTION::CC_CDECL)
 {
     printf("==============================================\n");
 
-    // If the number of arguments is less than 4, we complete it to four.
+#ifdef _WIN64
+    // If the number of arguments is less than 4, we complete it to 4.
     while (Arguments.size() < 4)
         Arguments.push_back(0);
+#else
+    if (CallConvention == CALLINGCONVENTION::CC_FASTCALL)
+    {
+        // If the number of arguments is less than 2, we complete it to 2.
+        while (Arguments.size() < 2)
+            Arguments.push_back(0);
+    }
+#endif
 
     HIJACKDATA Data = {};
 
     PVOID VariablesMemory = nullptr;
 
-    const SIZE_T ArgumentsSize = GetArgumentsSize(Arguments, SIZETYPE::INCLUDEEXTRA) + sizeof(UINT_PTR);
-    const SIZE_T OffsetToExtra = GetArgumentsSize(Arguments, SIZETYPE::DEFAULT) + sizeof(UINT_PTR);
+    const SIZE_T ArgumentsSize = GetArgumentsSize(Arguments, SIZETYPE::INCLUDEEXTRA) + sizeof(DWORD64);
+    const SIZE_T OffsetToExtra = GetArgumentsSize(Arguments, SIZETYPE::DEFAULT) + sizeof(DWORD64);
 
     // Allocating space for the argument count + arguments 
     VariablesMemory = VirtualAllocEx(TargetProcess, nullptr, ArgumentsSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -318,9 +378,18 @@ void HandleHijack(HANDLE TargetProcess, HIJACKTYPE HijackType, UINT_PTR Function
         VirtualFreeEx(TargetProcess, VariablesMemory, 0, MEM_RELEASE);
         return;
     }
+#ifndef _WIN64
+    // Writing the calling convetion to the second UINT_PTR
+    if (!WriteProcessMemory(TargetProcess, (BYTE*)VariablesMemory + 4, &CallConvention, sizeof(DWORD), NULL))
+    {
+        printf("[-] WriteProcessMemory failed, err: 0x%X\n", GetLastError());
+        VirtualFreeEx(TargetProcess, VariablesMemory, 0, MEM_RELEASE);
+        return;
+    }
+#endif
 
     // Writing the other arguments, if it's a string we write them to the extra zone.
-    SIZE_T Offset = sizeof(UINT_PTR);
+    SIZE_T Offset = sizeof(DWORD64);
     SIZE_T OffsetFromExtra = 0;
     for (auto& ArgIdx : Arguments)
     {
@@ -474,8 +543,8 @@ int main(int argc, const char* argv[])
     }
     printf("[*] Retrieved handle for target process, 0x%X\n", HandleToULong(TargetProcess));
 
-    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxExW, { 0, L"TEXT", L"CAPTION", 0, 0 });
-    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxW, { 0, L"WTEXT", L"WCAPTION", 0 });
+    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxExW, { 0, L"TEXT", L"CAPTION", 0, 0 }, CALLINGCONVENTION::CC_STDCALL);
+    HandleHijack(TargetProcess, HIJACKTYPE::DIRECT, (UINT_PTR)MessageBoxW, { 0, L"WTEXT", L"WCAPTION", 0 }, CALLINGCONVENTION::CC_STDCALL);
 
     CloseHandle(TargetProcess);
     printf("[*] Target process handle closed.\n");
