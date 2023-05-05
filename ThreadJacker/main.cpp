@@ -41,13 +41,23 @@ HANDLE GetMainThreadHandle(DWORD TargetProcessPid)
     THREADENTRY32 ThreadEntry = {};
     ThreadEntry.dwSize = sizeof(THREADENTRY32);
 
+    // Putting an iteration limit to prevent deadlock.
+    SIZE_T IterateTimes = 0;
     Thread32First(hSnapshot, &ThreadEntry);
     do
     {
         Thread32Next(hSnapshot, &ThreadEntry);
+
+        IterateTimes++;
+        if (IterateTimes >= 10000)
+        {
+            printf("[-] Thread couldn't be found.\n");
+            CloseHandle(hSnapshot);
+            return NULL;
+        }
     } while (ThreadEntry.th32OwnerProcessID != TargetProcessPid);
 
-    HANDLE hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, ThreadEntry.th32ThreadID);
+    HANDLE hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, ThreadEntry.th32ThreadID);
     if (!hThread)
         printf("OpenThread failed, err: 0x%X\n", GetLastError());
 
@@ -148,45 +158,8 @@ void HijackThread(HANDLE TargetProcess, HIJACKDATA& Data)
     }
     printf("[*] Shellcode bytes are written.\n");
 
-    // Getting a snapshot of the threads running on the system.
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-
-    THREADENTRY32 ThreadEntry = {};
-    ThreadEntry.dwSize = sizeof(THREADENTRY32);
-
-    // Iterating through the threads until we find a thread from the target process.
-    Thread32First(hSnapshot, &ThreadEntry);
-
-    // Putting an iteration limit to prevent deadlock.
-    SIZE_T IterateTimes = 0;
-    while (ThreadEntry.th32OwnerProcessID != GetProcessId(TargetProcess))
-    {
-        if (!Thread32Next(hSnapshot, &ThreadEntry))
-        {
-            printf("[-] Thread32Next failed, err: 0x%X\n", GetLastError());
-
-            VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
-            CloseHandle(hSnapshot);
-            return;
-        }
-
-        IterateTimes++;
-
-        if (IterateTimes >= 10000)
-        {
-            printf("[-] Thread couldn't be found.\n");
-
-            VirtualFreeEx(TargetProcess, ShellcodeMemory, 0, MEM_RELEASE);
-            CloseHandle(hSnapshot);
-            return;
-        }
-    }
-    printf("[*] Thread found, TID: %i\n", ThreadEntry.th32ThreadID);
-
-    CloseHandle(hSnapshot);
-
-    // Getting a handle to the found thread.
-    HANDLE hThread = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, ThreadEntry.th32ThreadID);
+    // Getting a handle to the main thread.
+    HANDLE hThread = GetMainThreadHandle(GetProcessId(TargetProcess));
     if (!hThread)
     {
         printf("[-] OpenThread failed, err: 0x%X\n", GetLastError());
