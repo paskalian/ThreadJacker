@@ -131,8 +131,8 @@ FCALL:
     mov eax, 0CCCCCCCCh                                 ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE VARIABLES BASE ADDRESS AT RUNTIME
     mov esi, dword ptr[eax]                             ; GETTING THE ARGUMENT COUNT TO ESI
     mov ebx, dword ptr[eax + 04h]                       ; GETTING THE CALLING CONVENTION TO EBX
-    cmp ebx, 1                                          ; CHECKING THE CALLING CONVENTION AGAINST STDCALL
-    je FEND                                             ; IF ITS EQUAL TO STDCALL THEN JUMPS TO FEND SINCE ON STDCALLS THE CALLEE HANDLES ON POPPING THE STACK VARIABLES    
+    test ebx, ebx                                       ; CHECKING THE CALLING CONVENTION
+    jnz FEND                                            ; IF ITS NOT CDECL THEN JUMPS TO FEND SINCE ONLY ON CDECL THE CALLER HANDLES THE POPPING OF STACK VARIABLES (FOR THE CALLING CONVENTIONS WE HANDLE)
     imul esi, 4                                         ; MULTIPLYING EXTRA ARGUMENT COUNT BY 4
     add esp, esi                                        ; POPPING ALL EXTRA VARIABLES BACK
 FEND:
