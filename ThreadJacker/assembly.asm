@@ -28,10 +28,10 @@ EXECUTE64 PROC
 
     mov rax, 0CCCCCCCCCCCCCCCCh                         ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE VARIABLES BASE ADDRESS AT RUNTIME
     mov rsi, qword ptr[rax]                             ; GETTING THE ARGUMENT COUNT TO RSI
-    mov rcx, qword ptr[rax + 08h]                       ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
-    mov rdx, qword ptr[rax + 10h]                       ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
-    mov r8, qword ptr[rax + 18h]                        ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
-    mov r9, qword ptr[rax + 20h]                        ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
+    mov rcx, qword ptr[rax + 10h]                       ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY, JUMPED OVER THE RETURN ADDRESS THATS WHY ITS 0x10
+    mov rdx, qword ptr[rax + 18h]                       ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
+    mov r8, qword ptr[rax + 20h]                        ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
+    mov r9, qword ptr[rax + 28h]                        ; SETTING THE FIRST 4 PARAMETERS RESPECTIVELY
     mov qword ptr[rax], 0                               ; TRANSFORMING THE ARGUMENT COUNT TO EXTRA ARGUMENT COUNT
     cmp rsi, 4                                          ; COMPARING THE ARGUMENT COUNT AGAINST 4
     jbe FCALL                                           ; IF THE ARGUMENT COUNT IS NOT BIGGER THAN 4 OR EQUAL TO IT THEN THERE IS NO EXTRA ARGUMENTS SO WE JUMP OVER
@@ -42,7 +42,7 @@ EXECUTE64 PROC
 STACK_ALIGN:
     sub rsp, 8                                          ; STACK ALIGNMENT
 EXTRA_PUSHES:
-    push qword ptr[rax + 20h + 08h * rsi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
+    push qword ptr[rax + 28h + 08h * rsi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
     dec rsi                                             ; DECREMENTING THE EXTRA STACK VARIABLES AMOUNT SINCE ONE OF THEM IS HANDLED
     test rsi, rsi                                       ; CHECKING IF THERE ARE ANY MORE EXTRA STACK VARIABLES LEFT
     jnz EXTRA_PUSHES                                    ; IF THERE ARE ANY MORE LEFT WE JUMP BACK TO EXTRA_PUSHES, IF NOT WE GO ON BY FCALL
@@ -50,6 +50,7 @@ FCALL:                                                  ; PUSHING EXTRA ARGUMENT
     mov rax, 0CCCCCCCCCCCCCCCCh                         ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE ACTUAL FUNCTION ADDRESS AT RUNTIME
     sub rsp, 20h                                        ; OPENING UP STACK SPACE FOR VARIABLES
     call rax                                            ; CALLING THE FUNCTION GIVEN
+    mov rdx, rax                                        ; STORING THE RETURN VALUE IN RDX
     add rsp, 20h                                        ; REVOKING THE STACK SPACE FOR VARIABLES
     mov rax, 0CCCCCCCCCCCCCCCCh                         ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE VARIABLES BASE ADDRESS AT RUNTIME
     mov rsi, qword ptr[rax]                             ; GETTING THE EXTRA ARGUMENT COUNT TO RSI
@@ -62,6 +63,7 @@ STACK_ALIGN2:
     add rsp, 8                                          ; STACK ALIGNMENT
 FEND:
     mov qword ptr[rax], -1                              ; SETTING THE ARGUMENT AMOUNT TO -1 INDICATING THE FUNCTION IS FINISHED
+    mov qword ptr[rax + 08h], rdx                       ; SETTING THE RETURN VALUE
     
     ; RESTORING THE REGISTERS
     pop r15
@@ -107,27 +109,28 @@ EXECUTE32 PROC
     je CONV_FASTCALL                                    ; IF ITS EQUAL TO FASTCALL THEN JUMPS TO FASTCALL
 CONV_CDECL:                                             ; IF ITS ANYTHING EXCEPT THEN GOES ON BY CDECL AND STDCALL
 CONV_STDCALL:
-    push dword ptr[eax + 04h + 04h * esi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
+    push dword ptr[eax + 08h + 04h * esi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER, JUMPED OVER THE RETURN ADDRESS THATS WHY ITS 0x8
     dec esi                                             ; DECREMENTING THE EXTRA STACK VARIABLES AMOUNT SINCE ONE OF THEM IS HANDLED
     test esi, esi                                       ; CHECKING IF THERE ARE ANY MORE EXTRA STACK VARIABLES LEFT
     jnz CONV_STDCALL                                    ; IF THERE ARE ANY MORE LEFT WE JUMP BACK TO CONV_STDCALL, IF NOT WE GO ON BY FCALL
     jmp FCALL                                           ; DIRECT JUMP TO FCALL
 CONV_FASTCALL:
-    mov ecx, dword ptr[eax + 08h]                       ; SETTING THE FIRST 2 PARAMETERS RESPECTIVELY
-    mov edx, dword ptr[eax + 0Ch]                       ; SETTING THE FIRST 2 PARAMETERS RESPECTIVELY
+    mov ecx, dword ptr[eax + 0Ch]                       ; SETTING THE FIRST 2 PARAMETERS RESPECTIVELY
+    mov edx, dword ptr[eax + 10h]                       ; SETTING THE FIRST 2 PARAMETERS RESPECTIVELY
     mov dword ptr[eax], 0                               ; TRANSFORMING THE ARGUMENT COUNT TO EXTRA ARGUMENT COUNT
     cmp esi, 2                                          ; COMPARING THE ARGUMENT COUNT AGAINST 4
     jbe FCALL                                           ; IF THE ARGUMENT COUNT IS NOT BIGGER THAN 2 OR EQUAL TO IT THEN THERE IS NO EXTRA ARGUMENTS SO WE JUMP OVER
     sub esi, 2                                          ; IF THERE ARE EXTRA ARGUMENTS WE SUBTRACT 2 FROM THE ARGUMENT COUNT TO GET THE AMOUNT OF EXTRA STACK VARIABLES
     mov dword ptr[eax], esi                             ; SETTING THE EXTRA ARGUMENT COUNT
 CONV_FASTCALL_PUSH:
-    push dword ptr[eax + 0Ch + 04h * esi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
+    push dword ptr[eax + 10h + 04h * esi]               ; PUSHING THE EXTRA ARGUMENTS ONTO THE STACK FROM LAST-TO-FIRST ORDER
     dec esi                                             ; DECREMENTING THE EXTRA STACK VARIABLES AMOUNT SINCE ONE OF THEM IS HANDLED
     test esi, esi                                       ; CHECKING IF THERE ARE ANY MORE EXTRA STACK VARIABLES LEFT
     jnz CONV_FASTCALL_PUSH  
 FCALL:
     mov eax, 0CCCCCCCCh                                 ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE ACTUAL FUNCTION ADDRESS AT RUNTIME
     call eax
+    mov edx, eax                                        ; STORING THE RETURN VALUE IN EDX
     mov eax, 0CCCCCCCCh                                 ; DUMMY ADDRESS THAT WILL BE REPLACED WITH THE VARIABLES BASE ADDRESS AT RUNTIME
     mov esi, dword ptr[eax]                             ; GETTING THE ARGUMENT COUNT TO ESI
     mov ebx, dword ptr[eax + 04h]                       ; GETTING THE CALLING CONVENTION TO EBX
@@ -137,6 +140,7 @@ FCALL:
     add esp, esi                                        ; POPPING ALL EXTRA VARIABLES BACK
 FEND:
     mov dword ptr[eax], -1                              ; SETTING THE ARGUMENT AMOUNT TO -1 INDICATING THE FUNCTION IS FINISHED
+    mov dword ptr[eax + 08h], edx                       ; SETTING THE RETURN VALUE
 
     ; RESTORING THE REGISTERS
     popad
