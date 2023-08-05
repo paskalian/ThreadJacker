@@ -5,7 +5,7 @@
 ## Information
 **Made for educational purposes only.**<br>
 
-**Don't forget that the hijacked thread can be any thread of the target process (usually main) and doesn't have the must to be running when it was hijacked. For summary even though you hijacked the thread, if it was in a sleep state it won't execute the shellcode until it runs.**
+**Don't forget that the hijacked thread can be any thread of the target process (usually main) and doesn't have the must to be running when it was hijacked. For summary even though you hijacked the thread, if it was in a sleep state it won't execute the shellcode until it exits that sleep state and continues running.**
 
 **The return value as you can also see is UINT_PTR which will hold up any given value to it, just cast it to it's actual type if you wanna go along, I didn't wanted to use templates.**
 
